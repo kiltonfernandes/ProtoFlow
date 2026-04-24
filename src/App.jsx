@@ -55,6 +55,61 @@ Then o sistema me apresenta $modaldeinstrucoes
 And o sistema me leva para @telalogin
 `
 
+const BLANK_BDD = `Feature: Product Management
+
+Scenario: Cadastro de produto
+Given que eu estou em @telacadastroproduto
+And vejo o %formularioproduto
+And vejo os componentes #nomeproduto, #sku, #categoria
+And vejo a acao !salvarproduto
+When eu executo !salvarproduto
+Then o sistema cadastra o produto
+And o sistema me leva para @telalistadeprodutos
+`
+
+const QUICK_SNIPPETS = [
+  { label: '@tela', snippet: '@telaproduto', help: 'Marca uma tela do fluxo.' },
+  { label: '#componente', snippet: '#nomeproduto', help: 'Marca um componente da tela.' },
+  { label: '$modal', snippet: '$modalconfirmacao', help: 'Marca um modal do fluxo.' },
+  { label: '!acao', snippet: '!salvarproduto', help: 'Marca uma acao clicavel.' },
+  { label: '%formulario', snippet: '%formularioproduto', help: 'Marca um formulario.' },
+  { label: '&estado', snippet: '&sucesso', help: 'Marca um estado importante.' },
+]
+
+const JOURNEYS = [
+  {
+    title: 'Criar uma nova feature',
+    summary: 'Escreva um scenario inicial e veja o ProtoFlow criar as telas e destinos automaticamente.',
+  },
+  {
+    title: 'Refinar o fluxo',
+    summary: 'Escolha um scenario, ajuste telas de destino e modele os pontos de transicao do produto.',
+  },
+  {
+    title: 'Testar o prototipo',
+    summary: 'Entre na tela gerada, adicione componentes e clique nos proximos passos para validar a navegacao.',
+  },
+]
+
+const HEURISTIC_NOTES = [
+  {
+    title: 'Visibilidade do estado do sistema',
+    summary: 'A interface agora deixa claro em qual etapa voce esta e qual screen e scenario estao ativos.',
+  },
+  {
+    title: 'Reconhecimento em vez de memorizacao',
+    summary: 'Os marcadores semanticos e os proximos passos ficam sempre visiveis, sem exigir lembrar a sintaxe.',
+  },
+  {
+    title: 'Controle e liberdade do usuario',
+    summary: 'Voce pode navegar entre Builder, Fluxo e Prototipo sem perder contexto.',
+  },
+  {
+    title: 'Estetica e minimalismo',
+    summary: 'Cada area agora faz uma coisa principal, sem competir pela atencao ao mesmo tempo.',
+  },
+]
+
 function slugifyToken(text) {
   return text
     .normalize('NFD')
@@ -64,7 +119,7 @@ function slugifyToken(text) {
 }
 
 function titleFromToken(token) {
-  const cleaned = token.replace(/^[@#$]/, '')
+  const cleaned = token.replace(/^[@#$!%&]/, '')
   const withSpaces = cleaned.replace(/([a-z])([A-Z])/g, '$1 $2')
   return withSpaces.replace(/(^\w|\s\w)/g, (match) => match.toUpperCase())
 }
@@ -90,19 +145,9 @@ function parseReferences(line, marker) {
   }))
 }
 
-function parseAllTokens(line) {
-  return Object.keys(TOKEN_DEFINITIONS).flatMap((marker) =>
-    parseReferences(line, marker === '$' ? '\\$' : marker).map((reference) => ({
-      ...reference,
-      marker,
-      kind: TOKEN_DEFINITIONS[marker].kind,
-    })),
-  )
-}
-
 function buildScenarioSummary(scenario) {
   if (!scenario.destinationIds.length && !scenario.modalIds.length) {
-    return 'Fluxo em construo'
+    return 'Fluxo em construcao'
   }
 
   const parts = []
@@ -294,12 +339,14 @@ function parseBDD(text) {
 
   const screens = Array.from(screensMap.values())
   const selectedScreenId = screens[0]?.id ?? ''
+  const selectedScenarioId = scenarios[0]?.id ?? ''
 
   return {
     featureName,
     scenarios,
     screens,
     selectedScreenId,
+    selectedScenarioId,
   }
 }
 
@@ -359,7 +406,7 @@ function renderPrototypeComponent(component) {
       return (
         <div className="form-shell">
           <strong>{component.label}</strong>
-          <p>Container de formulario para agrupar campos do fluxo.</p>
+          <p>Container principal do formulario.</p>
         </div>
       )
     case 'password':
@@ -417,7 +464,7 @@ function renderPrototypeComponent(component) {
       return (
         <div className="card-mock">
           <strong>{component.label}</strong>
-          <p>Bloco reutilizavel para o prototipo.</p>
+          <p>Bloco reutilizavel do wireframe.</p>
         </div>
       )
     case 'alert':
@@ -430,7 +477,7 @@ function renderPrototypeComponent(component) {
       return (
         <div className="modal-inline">
           <strong>{component.label}</strong>
-          <p>Modal embutido no canvas da tela.</p>
+          <p>Modal embutido no canvas.</p>
         </div>
       )
     default:
@@ -442,6 +489,12 @@ function App() {
   const [bddText, setBddText] = useState(DEFAULT_BDD)
   const [model, setModel] = useState(() => parseBDD(DEFAULT_BDD))
   const [parseError, setParseError] = useState('')
+  const [workspaceView, setWorkspaceView] = useState('overview')
+
+  const selectedScenario = useMemo(
+    () => model.scenarios.find((scenario) => scenario.id === model.selectedScenarioId) ?? model.scenarios[0],
+    [model],
+  )
 
   const selectedScreen = useMemo(
     () => model.screens.find((screen) => screen.id === model.selectedScreenId) ?? model.screens[0],
@@ -469,6 +522,11 @@ function App() {
           current.selectedScreenId && nextModel.screens.some((screen) => screen.id === current.selectedScreenId)
             ? current.selectedScreenId
             : nextModel.selectedScreenId,
+        selectedScenarioId:
+          current.selectedScenarioId &&
+          nextModel.scenarios.some((scenario) => scenario.id === current.selectedScenarioId)
+            ? current.selectedScenarioId
+            : nextModel.selectedScenarioId,
       }))
       setParseError('')
     } catch {
@@ -476,8 +534,34 @@ function App() {
     }
   }
 
+  function loadExample(exampleText) {
+    updateBDDText(exampleText)
+    setWorkspaceView('builder')
+  }
+
+  function insertSnippet(snippet) {
+    updateBDDText(`${bddText.trim()}\n${snippet}`)
+    setWorkspaceView('builder')
+  }
+
   function setSelectedScreen(screenId) {
-    setModel((current) => ({ ...current, selectedScreenId: screenId }))
+    const scenarioForScreen = model.scenarios.find((scenario) => scenario.startScreenId === screenId)
+
+    setModel((current) => ({
+      ...current,
+      selectedScreenId: screenId,
+      selectedScenarioId: scenarioForScreen?.id ?? current.selectedScenarioId,
+    }))
+  }
+
+  function setSelectedScenario(scenarioId) {
+    const scenario = model.scenarios.find((item) => item.id === scenarioId)
+
+    setModel((current) => ({
+      ...current,
+      selectedScenarioId: scenarioId,
+      selectedScreenId: scenario?.startScreenId ?? current.selectedScreenId,
+    }))
   }
 
   function updateFeatureName(value) {
@@ -493,26 +577,27 @@ function App() {
       id: `scenario${Date.now()}`,
       name: `Novo fluxo ${model.scenarios.length + 1}`,
       startScreenId: baseScreenId,
-        startScreenLabel: titleFromToken(baseScreenId),
-        components: [],
-        forms: [],
-        actions: [],
-        states: [],
-        modalIds: [],
-        destinationIds: [],
-        whenText: 'eu executo a acao principal',
+      startScreenLabel: titleFromToken(baseScreenId),
+      components: [],
+      forms: [],
+      actions: [],
+      states: [],
+      modalIds: [],
+      destinationIds: [],
+      whenText: 'eu executo a acao principal',
       outcomeText: 'o sistema responde corretamente',
     }
 
     syncModel({
       ...model,
       scenarios: [...model.scenarios, nextScenario],
+      selectedScenarioId: nextScenario.id,
     })
   }
 
   function addScreen() {
     const id = `novatela${model.screens.length + 1}`
-    const nextModel = {
+    syncModel({
       ...model,
       screens: [
         ...model.screens,
@@ -523,9 +608,7 @@ function App() {
         },
       ],
       selectedScreenId: id,
-    }
-
-    syncModel(nextModel)
+    })
   }
 
   function addComponent(template) {
@@ -592,13 +675,12 @@ function App() {
   }
 
   function addDestination(destinationId) {
-    const scenario = scenariosForSelectedScreen[0]
-    if (!scenario || !destinationId) {
+    if (!selectedScenario || !destinationId) {
       return
     }
 
     const nextScenarios = model.scenarios.map((item) =>
-      item.id === scenario.id
+      item.id === selectedScenario.id
         ? {
             ...item,
             destinationIds: [...new Set([...item.destinationIds, destinationId])],
@@ -613,14 +695,13 @@ function App() {
   }
 
   function addModalToScenario() {
-    const scenario = scenariosForSelectedScreen[0]
-    if (!scenario) {
+    if (!selectedScenario) {
       return
     }
 
-    const modalId = `modal${scenario.modalIds.length + 1}${selectedScreen.id}`
+    const modalId = `modal${selectedScenario.modalIds.length + 1}${selectedScenario.startScreenId}`
     const nextScenarios = model.scenarios.map((item) =>
-      item.id === scenario.id
+      item.id === selectedScenario.id
         ? {
             ...item,
             modalIds: [...item.modalIds, modalId],
@@ -640,15 +721,30 @@ function App() {
     return accumulator
   }, {})
 
+  const sidebarItems = [
+    { id: 'overview', step: '01', label: 'Overview', hint: 'Entenda e comece' },
+    { id: 'builder', step: '02', label: 'Builder', hint: 'Escreva o BDD' },
+    { id: 'flow', step: '03', label: 'Fluxo', hint: 'Revise a navegacao' },
+    { id: 'prototype', step: '04', label: 'Prototipo', hint: 'Teste a interface' },
+  ]
+
   return (
     <div className="app-shell">
       <header className="hero-panel">
         <div>
-          <p className="eyebrow">BDD Prototype Builder</p>
-          <h1>MVP para transformar Gherkin em fluxo e prototipo clicavel</h1>
+          <p className="eyebrow">ProtoFlow</p>
+          <h1>Do scenario ao prototipo, sem perder o fio da meada</h1>
           <p className="hero-copy">
-            O texto em Gherkin gera a estrutura da feature, o fluxo entre telas e um canvas modular com componentes reutilizaveis.
+            Reestruturado para voce trabalhar por jornadas: entender, escrever, revisar fluxo e testar o prototipo.
           </p>
+          <div className="hero-actions">
+            <button type="button" className="ghost-button" onClick={() => loadExample(DEFAULT_BDD)}>
+              Carregar exemplo
+            </button>
+            <button type="button" className="secondary-button" onClick={() => loadExample(BLANK_BDD)}>
+              Nova feature em branco
+            </button>
+          </div>
         </div>
         <div className="hero-metrics">
           <div>
@@ -666,170 +762,341 @@ function App() {
         </div>
       </header>
 
-      <main className="workspace-grid">
-        <section className="panel panel-editor">
-          <div className="panel-heading">
-            <div>
-              <p className="panel-kicker">Documentacao</p>
-              <h2>Feature em Gherkin</h2>
+      <div className="app-frame">
+        <aside className="sidebar">
+          <div className="sidebar-block">
+            <p className="sidebar-label">Workspace</p>
+            <div className="sidebar-nav">
+              {sidebarItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={workspaceView === item.id ? 'sidebar-link active' : 'sidebar-link'}
+                  onClick={() => setWorkspaceView(item.id)}
+                >
+                  <span>{item.step}</span>
+                  <strong>{item.label}</strong>
+                  <small>{item.hint}</small>
+                </button>
+              ))}
             </div>
-            <button type="button" className="ghost-button" onClick={addScenario}>
-              Novo scenario
-            </button>
           </div>
 
-          <label className="field-stack">
-            <span>Nome da feature</span>
-            <input
-              type="text"
-              value={model.featureName}
-              onChange={(event) => updateFeatureName(event.target.value)}
-            />
-          </label>
-
-          <label className="field-stack grow">
-            <span>BDD source</span>
-            <textarea
-              className="bdd-editor"
-              value={bddText}
-              onChange={(event) => updateBDDText(event.target.value)}
-              spellCheck="false"
-            />
-          </label>
-
-          <div className="hint-box">
-            <strong>Convencoes do MVP</strong>
-            <p>
-              Use <code>@</code> para telas, <code>#</code> para componentes, <code>$</code> para modais, <code>!</code> para acoes, <code>%</code> para formularios e <code>&amp;</code> para estados.
-            </p>
-            {parseError ? <p className="error-text">{parseError}</p> : null}
-          </div>
-        </section>
-
-        <section className="panel panel-flow">
-          <div className="panel-heading">
-            <div>
-              <p className="panel-kicker">Fluxo</p>
-              <h2>Mapa navegavel</h2>
+          <div className="sidebar-block">
+            <p className="sidebar-label">Resumo ativo</p>
+            <div className="mini-card">
+              <span>Feature</span>
+              <strong>{model.featureName}</strong>
             </div>
-            <button type="button" className="ghost-button" onClick={addScreen}>
-              Nova tela
-            </button>
+            <div className="mini-card">
+              <span>Scenario</span>
+              <strong>{selectedScenario?.name ?? 'Nenhum scenario'}</strong>
+            </div>
+            <div className="mini-card">
+              <span>Tela</span>
+              <strong>{selectedScreen ? `@${selectedScreen.id}` : 'Nenhuma tela'}</strong>
+            </div>
           </div>
 
-          <div className="screen-list">
-            {model.screens.map((screen) => (
-              <button
-                key={screen.id}
-                type="button"
-                className={`screen-node ${screen.id === selectedScreen?.id ? 'active' : ''}`}
-                onClick={() => setSelectedScreen(screen.id)}
-              >
-                <strong>@{screen.id}</strong>
-                <span>{screen.components.length} componentes</span>
-              </button>
-            ))}
+          <div className="sidebar-block">
+            <p className="sidebar-label">Marcadores</p>
+            <div className="token-legend">
+              {Object.entries(TOKEN_DEFINITIONS).map(([marker, meta]) => (
+                <div key={marker} className="legend-row">
+                  <span className={`token-chip ${meta.kind}`}>{marker}</span>
+                  <small>{meta.label}</small>
+                </div>
+              ))}
+            </div>
           </div>
+        </aside>
 
-          <div className="scenario-stack">
-            {model.scenarios.map((scenario) => (
-              <article key={scenario.id} className="scenario-card">
-                <p className="scenario-name">{scenario.name}</p>
-                <p className="scenario-origin">Origem: @{scenario.startScreenId}</p>
-                <p className="scenario-summary">{buildScenarioSummary(scenario)}</p>
-                <div className="token-row">
-                  {parseAllTokens(
-                    [
-                      `@${scenario.startScreenId}`,
-                      ...scenario.destinationIds.map((item) => `@${item}`),
-                      ...scenario.modalIds.map((item) => `$${item}`),
-                      ...scenario.components.map((item) => `#${item.id}`),
-                      ...scenario.forms.map((item) => `%${item.id}`),
-                      ...scenario.actions.map((item) => `!${item.id}`),
-                      ...scenario.states.map((item) => `&${item.id}`),
-                    ].join(' '),
-                  ).map((token) => (
-                    <span key={`${scenario.id}-${token.marker}-${token.id}`} className={`token-chip ${token.kind}`}>
-                      {token.marker}
-                      {token.id}
-                    </span>
+        <section className="content-stage">
+          {workspaceView === 'overview' ? (
+            <div className="stage-grid overview-stage">
+              <section className="panel stage-hero">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">UX Review</p>
+                    <h2>O que mudou na experiencia</h2>
+                  </div>
+                </div>
+                <div className="heuristic-grid">
+                  {HEURISTIC_NOTES.map((item) => (
+                    <article key={item.title} className="heuristic-card">
+                      <strong>{item.title}</strong>
+                      <p>{item.summary}</p>
+                    </article>
                   ))}
                 </div>
-              </article>
-            ))}
-          </div>
+              </section>
 
-          {selectedScreen ? (
-            <div className="flow-actions">
-              <label className="field-stack">
-                <span>Adicionar navegacao para</span>
-                <select defaultValue="" onChange={(event) => addDestination(event.target.value)}>
-                  <option value="" disabled>
-                    Escolha uma tela
-                  </option>
-                  {model.screens
-                    .filter((screen) => screen.id !== selectedScreen.id)
-                    .map((screen) => (
-                      <option key={screen.id} value={screen.id}>
-                        @{screen.id}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <button type="button" className="ghost-button" onClick={addModalToScenario}>
-                Adicionar modal ao fluxo atual
-              </button>
+              <section className="panel">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">Jornadas</p>
+                    <h2>Principais caminhos do usuario</h2>
+                  </div>
+                </div>
+                <div className="journey-list">
+                  {JOURNEYS.map((journey, index) => (
+                    <article key={journey.title} className="journey-card">
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <div>
+                        <strong>{journey.title}</strong>
+                        <p>{journey.summary}</p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">Quick Start</p>
+                    <h2>Comece sem travar</h2>
+                  </div>
+                </div>
+                <div className="quick-actions">
+                  <button type="button" className="ghost-button" onClick={() => setWorkspaceView('builder')}>
+                    Ir para o Builder
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => loadExample(DEFAULT_BDD)}>
+                    Abrir exemplo pronto
+                  </button>
+                </div>
+                <div className="snippet-grid">
+                  {QUICK_SNIPPETS.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      className="snippet-card"
+                      onClick={() => insertSnippet(item.snippet)}
+                    >
+                      <strong>{item.label}</strong>
+                      <span>{item.help}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             </div>
           ) : null}
-        </section>
 
-        <section className="panel panel-prototype">
-          <div className="panel-heading">
-            <div>
-              <p className="panel-kicker">Prototipo</p>
-              <h2>Canvas de tela</h2>
-            </div>
-          </div>
-
-          {selectedScreen ? (
-            <>
-              <div className="prototype-header">
-                <div>
-                  <span className="device-pill">Screen</span>
-                  <h3>@{selectedScreen.id}</h3>
-                </div>
-                <p>{scenariosForSelectedScreen[0]?.outcomeText ?? 'Sem scenario associado ainda.'}</p>
-              </div>
-
-              <div className="prototype-canvas">
-                {selectedScreen.components.length ? (
-                  selectedScreen.components.map((component) => (
-                    <div key={component.id} className="prototype-block">
-                      <div className="prototype-block-head">
-                        <span>#{component.id}</span>
-                        <small>{component.type}</small>
-                      </div>
-                      {renderPrototypeComponent(component)}
-                    </div>
-                  ))
-                ) : (
-                  <div className="empty-state">
-                    <strong>Tela em branco</strong>
-                    <p>Adicione componentes da biblioteca para montar o wireframe.</p>
+          {workspaceView === 'builder' ? (
+            <div className="stage-grid builder-stage">
+              <section className="panel panel-tall">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">Step 1</p>
+                    <h2>Escreva a feature</h2>
                   </div>
-                )}
+                  <button type="button" className="ghost-button" onClick={addScenario}>
+                    Novo scenario
+                  </button>
+                </div>
 
-                {scenariosForSelectedScreen.flatMap((scenario) =>
-                  scenario.modalIds.map((modalId) => (
-                    <div key={modalId} className="modal-preview">
-                      <strong>${modalId}</strong>
-                      <p>Modal derivado do fluxo atual.</p>
+                <div className="callout">
+                  <strong>Como comecar</strong>
+                  <p>
+                    Use um `Given` com `@tela`, depois descreva `%formulario`, `#componentes` e a `!acao` principal.
+                  </p>
+                </div>
+
+                <label className="field-stack">
+                  <span>Nome da feature</span>
+                  <input
+                    type="text"
+                    value={model.featureName}
+                    onChange={(event) => updateFeatureName(event.target.value)}
+                  />
+                </label>
+
+                <label className="field-stack grow">
+                  <span>BDD source</span>
+                  <textarea
+                    className="bdd-editor"
+                    value={bddText}
+                    onChange={(event) => updateBDDText(event.target.value)}
+                    spellCheck="false"
+                  />
+                </label>
+
+                <div className="hint-box">
+                  <strong>Guia rapido</strong>
+                  <p>
+                    Escreva livremente em Gherkin. O ProtoFlow extrai `@`, `#`, `$`, `!`, `%` e `&` para montar o resto.
+                  </p>
+                  {parseError ? <p className="error-text">{parseError}</p> : null}
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">Scenarios</p>
+                    <h2>O que ja foi identificado</h2>
+                  </div>
+                </div>
+                <div className="scenario-stack">
+                  {model.scenarios.map((scenario) => (
+                    <button
+                      key={scenario.id}
+                      type="button"
+                      className={scenario.id === selectedScenario?.id ? 'scenario-select active' : 'scenario-select'}
+                      onClick={() => setSelectedScenario(scenario.id)}
+                    >
+                      <strong>{scenario.name}</strong>
+                      <span>@{scenario.startScreenId}</span>
+                      <small>{buildScenarioSummary(scenario)}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {workspaceView === 'flow' ? (
+            <div className="stage-grid flow-stage">
+              <section className="panel">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">Step 2</p>
+                    <h2>Telas do fluxo</h2>
+                  </div>
+                  <button type="button" className="ghost-button" onClick={addScreen}>
+                    Nova tela
+                  </button>
+                </div>
+                <div className="screen-list">
+                  {model.screens.map((screen) => (
+                    <button
+                      key={screen.id}
+                      type="button"
+                      className={screen.id === selectedScreen?.id ? 'screen-node active' : 'screen-node'}
+                      onClick={() => setSelectedScreen(screen.id)}
+                    >
+                      <strong>@{screen.id}</strong>
+                      <span>{screen.components.length} componentes</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel panel-tall">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">Scenario ativo</p>
+                    <h2>{selectedScenario?.name ?? 'Nenhum scenario'}</h2>
+                  </div>
+                </div>
+
+                <div className="flow-path">
+                  <div className="path-card">
+                    <span>Origem</span>
+                    <strong>@{selectedScenario?.startScreenId ?? '---'}</strong>
+                  </div>
+                  <div className="path-divider">→</div>
+                  <div className="path-card">
+                    <span>Modal</span>
+                    <strong>{selectedScenario?.modalIds[0] ? `$${selectedScenario.modalIds[0]}` : 'Nenhum'}</strong>
+                  </div>
+                  <div className="path-divider">→</div>
+                  <div className="path-card">
+                    <span>Destino</span>
+                    <strong>{selectedScenario?.destinationIds[0] ? `@${selectedScenario.destinationIds[0]}` : 'Nenhum'}</strong>
+                  </div>
+                </div>
+
+                <div className="scenario-stack">
+                  {model.scenarios.map((scenario) => (
+                    <article
+                      key={scenario.id}
+                      className={scenario.id === selectedScenario?.id ? 'scenario-card selected' : 'scenario-card'}
+                    >
+                      <div className="scenario-card-head">
+                        <strong>{scenario.name}</strong>
+                        <button type="button" className="text-button" onClick={() => setSelectedScenario(scenario.id)}>
+                          Focar
+                        </button>
+                      </div>
+                      <p className="scenario-origin">Origem: @{scenario.startScreenId}</p>
+                      <p className="scenario-summary">{buildScenarioSummary(scenario)}</p>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="flow-actions">
+                  <label className="field-stack">
+                    <span>Adicionar navegacao</span>
+                    <select defaultValue="" onChange={(event) => addDestination(event.target.value)}>
+                      <option value="" disabled>
+                        Escolha uma tela
+                      </option>
+                      {model.screens
+                        .filter((screen) => screen.id !== selectedScenario?.startScreenId)
+                        .map((screen) => (
+                          <option key={screen.id} value={screen.id}>
+                            @{screen.id}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <button type="button" className="secondary-button" onClick={addModalToScenario}>
+                    Adicionar modal
+                  </button>
+                  <button type="button" className="ghost-button" onClick={() => setWorkspaceView('prototype')}>
+                    Testar no prototipo
+                  </button>
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {workspaceView === 'prototype' ? (
+            <div className="stage-grid prototype-stage">
+              <section className="panel">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">Step 3</p>
+                    <h2>Navegue pela tela</h2>
+                  </div>
+                </div>
+                <div className="prototype-header">
+                  <div>
+                    <span className="device-pill">Screen</span>
+                    <h3>@{selectedScreen?.id ?? 'Nenhuma tela'}</h3>
+                  </div>
+                  <p>{selectedScenario?.outcomeText ?? 'Sem scenario associado ainda.'}</p>
+                </div>
+                <div className="prototype-canvas">
+                  {selectedScreen?.components.length ? (
+                    selectedScreen.components.map((component) => (
+                      <div key={component.id} className="prototype-block">
+                        <div className="prototype-block-head">
+                          <span>#{component.id}</span>
+                          <small>{component.type}</small>
+                        </div>
+                        {renderPrototypeComponent(component)}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-state">
+                      <strong>Tela em branco</strong>
+                      <p>Adicione componentes na coluna ao lado.</p>
                     </div>
-                  )),
-                )}
-              </div>
+                  )}
 
-              {scenariosForSelectedScreen.length ? (
+                  {scenariosForSelectedScreen.flatMap((scenario) =>
+                    scenario.modalIds.map((modalId) => (
+                      <div key={modalId} className="modal-preview">
+                        <strong>${modalId}</strong>
+                        <p>Modal derivado do fluxo.</p>
+                      </div>
+                    )),
+                  )}
+                </div>
+
                 <div className="navigation-strip">
                   {scenariosForSelectedScreen.flatMap((scenario) =>
                     scenario.destinationIds.map((destinationId) => (
@@ -844,13 +1111,20 @@ function App() {
                     )),
                   )}
                 </div>
-              ) : null}
+              </section>
 
-              <div className="component-editor">
+              <section className="panel panel-tall">
+                <div className="panel-heading">
+                  <div>
+                    <p className="panel-kicker">Inspector</p>
+                    <h2>Monte a tela atual</h2>
+                  </div>
+                </div>
+
                 <div className="subpanel">
-                  <h3>Biblioteca de componentes</h3>
+                  <h3>Biblioteca</h3>
                   <p className="subtle-text">
-                    Estrutura unica de dados: o que entra aqui reflete no prototipo, no fluxo e no BDD normalizado.
+                    Adicione blocos genericos. Tudo alimenta a mesma estrutura de dados do builder e do fluxo.
                   </p>
                   {Object.entries(libraryByCategory).map(([category, items]) => (
                     <div key={category} className="library-group">
@@ -873,7 +1147,7 @@ function App() {
 
                 <div className="subpanel">
                   <h3>Componentes da tela</h3>
-                  {selectedScreen.components.length ? (
+                  {selectedScreen?.components.length ? (
                     selectedScreen.components.map((component) => (
                       <div key={component.id} className="component-row">
                         <div>
@@ -895,19 +1169,14 @@ function App() {
                       </div>
                     ))
                   ) : (
-                    <p className="subtle-text">Nenhum componente ainda nessa tela.</p>
+                    <p className="subtle-text">Nenhum componente nessa tela ainda.</p>
                   )}
                 </div>
-              </div>
-            </>
-          ) : (
-            <div className="empty-state">
-              <strong>Nenhuma tela encontrada</strong>
-              <p>Crie uma tela ou escreva um scenario com `@nomedatela`.</p>
+              </section>
             </div>
-          )}
+          ) : null}
         </section>
-      </main>
+      </div>
     </div>
   )
 }
